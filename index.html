@@ -3,16 +3,16 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Inteligentný Hlasový Prekladač v10</title>
+    <title>Inteligentný Hlasový Prekladač v11</title>
     
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script>
-        // Set theme from localStorage before page load to prevent flash
-        const settings_v10 = JSON.parse(localStorage.getItem('translatorSettings_v10')) || { theme: 'light' };
-        if (settings_v10.theme === 'dark') {
+        // Používame nový kľúč pre nastavenia, aby sme predišli konfliktom so starou verziou
+        const settings_v11 = JSON.parse(localStorage.getItem('translatorSettings_v11')) || { theme: 'light' };
+        if (settings_v11.theme === 'dark') {
             document.documentElement.classList.add('dark');
         } else {
             document.documentElement.classList.remove('dark');
@@ -117,9 +117,12 @@
             let finalTranscript = '';
             let isTranslatingSegment = false;
             let simultaneousPauseTimer = null;
-            
-            // REVAMPED: Simplified state management. 'idle', 'recording', 'processing'.
             let micState = 'idle'; 
+
+            // NOVINKA: Premenné pre "strážneho psa"
+            let watchdogInterval = null;
+            let lastResultTimestamp = 0;
+            const WATCHDOG_TIMEOUT = 3000; // 3 sekundy
 
             const LANGUAGES = {
                 'sk-SK': { name: 'Slovak', displayName: 'Slovenčina', statusText: 'Kliknite na mikrofón pre štart' },
@@ -137,18 +140,16 @@
             };
 
             // --- Settings & Persistence ---
-            const saveSettings = () => localStorage.setItem('translatorSettings_v10', JSON.stringify(settings));
+            const saveSettings = () => localStorage.setItem('translatorSettings_v11', JSON.stringify(settings));
             
             const loadSettings = () => {
-                const loaded = JSON.parse(localStorage.getItem('translatorSettings_v10'));
+                const loaded = JSON.parse(localStorage.getItem('translatorSettings_v11'));
                 if (loaded) {
                     settings = { ...settings, ...loaded };
                 }
                 apiKeyInput.value = settings.apiKey;
-                if (settings.apiKey) {
-                    micBtn.disabled = false;
-                } else {
-                    micBtn.disabled = true;
+                micBtn.disabled = !settings.apiKey;
+                if (!settings.apiKey) {
                     apiKeySection.classList.remove('hidden');
                 }
                 simultaneousToggle.checked = settings.simultaneous;
@@ -201,12 +202,13 @@
             };
             const updateUIForLanguage = () => { setMicStateUI('idle'); };
 
-            // NEW: Centralized function to reset the application state
             const resetState = () => {
                 if (micState !== 'idle') {
                     console.log("Resetting state.");
                     recognition.stop();
                 }
+                // NOVINKA: Zastavenie "strážneho psa"
+                clearInterval(watchdogInterval);
                 clearTimeout(simultaneousPauseTimer);
                 micState = 'idle';
                 isTranslatingSegment = false;
@@ -219,6 +221,9 @@
             recognition.interimResults = true;
 
             recognition.onresult = (event) => {
+                // NOVINKA: Aktualizujeme časovú značku pri každom výsledku
+                lastResultTimestamp = Date.now();
+
                 clearTimeout(simultaneousPauseTimer);
                 let interimTranscript = '';
                 for (let i = event.resultIndex; i < event.results.length; ++i) {
@@ -232,35 +237,36 @@
                 status.textContent = interimTranscript || 'Počúvam...';
                 
                 if (settings.simultaneous && finalTranscript) {
+                    // ÚPRAVA: Skrátený časovač
                     simultaneousPauseTimer = setTimeout(() => {
                         if (finalTranscript && !isTranslatingSegment) {
                             processTranscript(finalTranscript);
-                            finalTranscript = ''; // Clear after sending for processing
+                            finalTranscript = ''; 
                         }
-                    }, 1200);
+                    }, 1000); 
                 }
             };
 
-            // REVAMPED: onend handler for robustness
             recognition.onend = () => {
-                // If in simultaneous mode and we were recording, it means the service timed out. Restart it.
-                if (settings.simultaneous && micState === 'recording') {
-                    console.log("Simultaneous mode: Recognition ended unexpectedly. Restarting...");
+                console.log(`Recognition ended. Current state: ${micState}. Simultaneous: ${settings.simultaneous}`);
+                // Ak sa skončilo a my sme chceli nahrávať (napr. timeout v simultánnom režime), skúsime reštartovať.
+                if (micState === 'recording') {
+                    console.log("Recognition ended unexpectedly while in recording state. Attempting restart.");
                     try {
-                        recognition.start(); // Re-start listening immediately
+                        recognition.start(); 
                     } catch(e) {
                         console.error("Error restarting recognition:", e);
-                        resetState(); // If restart fails, reset everything.
+                        resetState();
                     }
-                    return; // Don't proceed to normal end-of-speech processing
+                    return;
                 }
 
-                // This part now only runs for non-simultaneous mode OR when user manually stops.
-                if (micState === 'processing' || micState === 'recording') {
+                // Spracovanie len ak sme manuálne zastavili nahrávanie
+                if (micState === 'processing') {
                      if (finalTranscript) {
                          processTranscript(finalTranscript);
                      } else {
-                         resetState(); // Nothing to process, just reset.
+                         resetState();
                      }
                 }
             };
@@ -268,19 +274,36 @@
             recognition.onerror = (e) => { 
                 console.error("Speech Recognition Error:", e.error); 
                 displayError(`Chyba rozpoznávania: ${e.error}`); 
-                resetState(); // Always reset state on error
+                resetState();
+            };
+
+            // NOVINKA: Funkcia "strážneho psa"
+            const startWatchdog = () => {
+                console.log("Watchdog started.");
+                lastResultTimestamp = Date.now();
+                watchdogInterval = setInterval(() => {
+                    if (micState !== 'recording') return;
+
+                    if (Date.now() - lastResultTimestamp > WATCHDOG_TIMEOUT) {
+                        console.warn("Watchdog triggered: No speech result for too long. Restarting recognition.");
+                        recognition.stop(); // Týmto sa spustí onend, ktorý by mal zabezpečiť reštart
+                    }
+                }, 2000); // Kontrola každé 2 sekundy
             };
 
             const startRecording = () => {
                 if (micState !== 'idle') return;
                 if (!settings.apiKey) { apiKeySection.classList.remove('hidden'); keyStatus.textContent = 'Najprv prosím nastavte a uložte svoj OpenAI API kľúč.'; keyStatus.classList.add('text-red-500'); return; }
                 
+                console.log("Starting recording...");
                 micState = 'recording';
                 finalTranscript = '';
                 recognition.lang = settings.sourceLang;
                 try {
                     recognition.start();
                     setMicStateUI('recording');
+                    // NOVINKA: Spustenie "strážneho psa"
+                    startWatchdog();
                 } catch (e) {
                     console.error("Recognition start error:", e);
                     resetState();
@@ -289,11 +312,13 @@
 
             const stopRecording = () => {
                 if (micState !== 'recording') return;
-                micState = 'processing'; // Set state to processing before stopping
+                console.log("Stopping recording manually...");
+                micState = 'processing';
+                // NOVINKA: Zastavenie "strážneho psa" pri manuálnom vypnutí
+                clearInterval(watchdogInterval);
                 recognition.stop();
             };
 
-            // REVAMPED: Simplified microphone button logic
             micBtn.addEventListener('click', () => {
                 if (micState === 'idle') {
                     startRecording();
@@ -305,7 +330,7 @@
             // --- API Chain ---
             const processTranscript = async (transcriptToProcess) => {
                 if (!transcriptToProcess.trim()) {
-                    resetState();
+                    if(!settings.simultaneous) resetState();
                     return;
                 }
                 
@@ -330,7 +355,6 @@
                     if (settings.simultaneous) { 
                         isTranslatingSegment = false; 
                     } else {
-                        // In non-simultaneous mode, reset only after everything is done.
                         resetState();
                     }
                 }
@@ -357,10 +381,7 @@
                 const audioBlob = await response.blob(); 
                 const audioUrl = URL.createObjectURL(audioBlob);
                 const audio = new Audio(audioUrl);
-                
-                // FIX: Add event listener to revoke the object URL after playing to free up memory.
                 audio.addEventListener('ended', () => URL.revokeObjectURL(audioUrl));
-                
                 await audio.play();
             };
 
