@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Inteligentný Hlasový Prekladač v24</title>
+    <title>Inteligentný Hlasový Prekladač v25</title>
     
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.7.77/Tone.js"></script>
@@ -11,8 +11,8 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script>
-        const settings_v24 = JSON.parse(localStorage.getItem('translatorSettings_v24')) || { theme: 'light' };
-        if (settings_v24.theme === 'dark') {
+        const settings_v25 = JSON.parse(localStorage.getItem('translatorSettings_v25')) || { theme: 'light' };
+        if (settings_v25.theme === 'dark') {
             document.documentElement.classList.add('dark');
         }
     </script>
@@ -86,9 +86,10 @@
                 </div>
             </div>
 
-            <div class="flex items-center justify-center gap-8">
+            <!-- OPRAVA: Nový layout pre ovládacie prvky -->
+            <div class="relative flex items-center justify-center w-full">
                 <button id="mic-btn" class="microphone-button rounded-full p-5 md:p-6 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"><svg class="w-10 h-10 md:w-12 md:h-12 text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C10.343 2 9 3.343 9 5V11C9 12.657 10.343 14 12 14C13.657 14 15 12.657 15 11V5C15 3.343 13.657 2 12 2ZM12 16.25C10.428 16.25 9.143 15.653 8.172 14.682L7.465 15.389C8.615 16.539 10.211 17.25 12 17.25C13.789 17.25 15.385 16.539 16.535 15.389L15.828 14.682C14.857 15.653 13.572 16.25 12 16.25ZM19 11H17C17 13.761 14.761 16 12 16V18C15.867 18 19 14.867 19 11Z"/></svg></button>
-                <button id="clear-btn" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 p-3 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"><svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg></button>
+                <button id="clear-btn" class="absolute right-0 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 p-3 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg></button>
             </div>
             <p id="status" class="mt-4 text-[var(--text-muted-color)] text-sm h-5 text-center"></p>
         </main>
@@ -134,16 +135,14 @@
             let micState = 'idle';
             let audioContextUnlocked = false;
             
-            // NOVINKA: Vylepšené časovače
-            let silenceTimer = null; // Pre detekciu pauzy v reči
-            let inactivityTimer = null; // Pre dlhú neaktivitu
-            const SILENCE_TIMEOUT = 1000; // 1 sekunda ticha
-            const INACTIVITY_TIMEOUT = 20000; // 20 sekúnd ticha
+            let silenceTimer = null;
+            let inactivityTimer = null;
+            const SILENCE_TIMEOUT = 1000;
+            const INACTIVITY_TIMEOUT = 20000;
 
             let audioQueue = [];
             let isAudioPlaying = false;
 
-            // NOVINKA: Pre detekciu ticha na mobile
             let audioContext, analyser, sourceNode, dataArray;
             let silenceDetectionInterval = null;
 
@@ -166,10 +165,10 @@
             };
 
             // --- Settings & Persistence ---
-            const saveSettings = () => localStorage.setItem('translatorSettings_v24', JSON.stringify(settings));
+            const saveSettings = () => localStorage.setItem('translatorSettings_v25', JSON.stringify(settings));
             
             const loadSettings = () => {
-                const loaded = JSON.parse(localStorage.getItem('translatorSettings_v24'));
+                const loaded = JSON.parse(localStorage.getItem('translatorSettings_v25'));
                 if (loaded) {
                     settings = { ...settings, ...loaded };
                 }
@@ -338,8 +337,9 @@
                     const sum = dataArray.reduce((a, b) => a + b, 0);
                     const average = sum / bufferLength;
 
-                    if (average > 2) { // Detekovaná reč
+                    if (average > 1) { // Znížená citlivosť
                         silenceStart = Date.now();
+                        startInactivityTimer(); // Resetujeme časovač neaktivity
                     }
 
                     if (Date.now() - silenceStart > SILENCE_TIMEOUT) {
@@ -353,7 +353,7 @@
             const stopSilenceDetection = () => {
                 clearInterval(silenceDetectionInterval);
                 if (sourceNode) sourceNode.disconnect();
-                if (audioContext) audioContext.close();
+                if (audioContext && audioContext.state !== 'closed') audioContext.close();
             };
 
             const startMediaRecorder = async () => {
