@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Inteligentný Hlasový Prekladač v15</title>
+    <title>Inteligentný Hlasový Prekladač v16</title>
     
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -11,8 +11,8 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script>
         // Používame nový kľúč pre nastavenia, aby sme predišli konfliktom so starou verziou
-        const settings_v15 = JSON.parse(localStorage.getItem('translatorSettings_v15')) || { theme: 'light' };
-        if (settings_v15.theme === 'dark') {
+        const settings_v16 = JSON.parse(localStorage.getItem('translatorSettings_v16')) || { theme: 'light' };
+        if (settings_v16.theme === 'dark') {
             document.documentElement.classList.add('dark');
         } else {
             document.documentElement.classList.remove('dark');
@@ -120,8 +120,10 @@
 
             let watchdogInterval = null;
             let lastResultTimestamp = 0;
-            const WATCHDOG_TIMEOUT = 3000;
-            const SIMULTANEOUS_INTERVAL = 2500;
+            // OPRAVA: Nový časovač pre detekciu pauzy v reči
+            let speechPauseTimer = null; 
+            const SPEECH_PAUSE_TIMEOUT = 1200; // 1.2 sekundy ticha spustí preklad
+            const WATCHDOG_TIMEOUT = 4000; // Zvýšený timeout pre stabilitu
 
             const LANGUAGES = {
                 'sk-SK': { name: 'Slovak', displayName: 'Slovenčina', statusText: 'Kliknite na mikrofón pre štart' },
@@ -139,10 +141,10 @@
             };
 
             // --- Settings & Persistence ---
-            const saveSettings = () => localStorage.setItem('translatorSettings_v15', JSON.stringify(settings));
+            const saveSettings = () => localStorage.setItem('translatorSettings_v16', JSON.stringify(settings));
             
             const loadSettings = () => {
-                const loaded = JSON.parse(localStorage.getItem('translatorSettings_v15'));
+                const loaded = JSON.parse(localStorage.getItem('translatorSettings_v16'));
                 if (loaded) {
                     settings = { ...settings, ...loaded };
                 }
@@ -206,6 +208,7 @@
                     recognition.stop();
                 }
                 clearInterval(watchdogInterval);
+                clearTimeout(speechPauseTimer);
                 micState = 'idle';
                 isTranslatingSegment = false;
                 finalTranscript = '';
@@ -216,8 +219,11 @@
             recognition.continuous = true;
             recognition.interimResults = true;
 
+            // OPRAVA: Nová logika pre simultánny režim
             recognition.onresult = (event) => {
                 lastResultTimestamp = Date.now();
+                clearTimeout(speechPauseTimer); // Zrušíme starý časovač pauzy
+
                 let interimTranscript = '';
                 for (let i = event.resultIndex; i < event.results.length; ++i) {
                     const transcriptPart = event.results[i][0].transcript;
@@ -228,6 +234,17 @@
                     }
                 }
                 status.textContent = interimTranscript || 'Počúvam...';
+
+                // Ak sme v simultánnom režime, nastavíme nový časovač.
+                // Ak používateľ bude 1.2s ticho, preloží sa doterajší text.
+                if (settings.simultaneous) {
+                    speechPauseTimer = setTimeout(() => {
+                        if (finalTranscript && !isTranslatingSegment) {
+                            processTranscript(finalTranscript);
+                            finalTranscript = ''; // Vyčistíme buffer pre ďalšiu vetu
+                        }
+                    }, SPEECH_PAUSE_TIMEOUT);
+                }
             };
 
             recognition.onend = () => {
@@ -243,7 +260,7 @@
                 if (micState === 'processing' && finalTranscript) {
                      processTranscript(finalTranscript);
                 } else if (micState === 'processing') {
-                    resetState(); // Ak sme zastavili manuálne, ale nič sme nepovedali
+                    resetState();
                 }
             };
             
@@ -256,21 +273,15 @@
                 resetState();
             };
 
+            // Úlohou "strážneho psa" je už len chrániť pred zamrznutím.
             const startWatchdog = () => {
                 lastResultTimestamp = Date.now();
                 watchdogInterval = setInterval(() => {
                     if (micState !== 'recording') return;
-
                     if (Date.now() - lastResultTimestamp > WATCHDOG_TIMEOUT) {
                         recognition.stop();
-                        return;
                     }
-
-                    if (finalTranscript && !isTranslatingSegment) {
-                        processTranscript(finalTranscript);
-                        finalTranscript = '';
-                    }
-                }, SIMULTANEOUS_INTERVAL);
+                }, 2000);
             };
 
             const startRecording = () => {
@@ -292,19 +303,17 @@
                 }
             };
 
-            // OPRAVA: Inteligentné zastavenie podľa režimu
             const stopRecording = () => {
                 if (micState !== 'recording') return;
                 
-                // V simultánnom režime chceme okamžite všetko zastaviť a resetovať.
                 if (settings.simultaneous) {
                     resetState();
                     return;
                 }
-
-                // V klasickom režime chceme spracovať to, čo bolo nahraté.
+                
                 micState = 'processing';
                 clearInterval(watchdogInterval);
+                clearTimeout(speechPauseTimer);
                 recognition.stop();
             };
 
@@ -312,7 +321,6 @@
                 if (micState === 'idle') {
                     startRecording();
                 } else if (micState === 'recording') {
-                    // Táto funkcia teraz správne rozlišuje medzi režimami.
                     stopRecording();
                 }
             });
