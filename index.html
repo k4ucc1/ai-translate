@@ -86,7 +86,6 @@
                 </div>
             </div>
 
-            <!-- OPRAVA: Nový layout pre ovládacie prvky -->
             <div class="relative flex items-center justify-center w-full">
                 <button id="mic-btn" class="microphone-button rounded-full p-5 md:p-6 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"><svg class="w-10 h-10 md:w-12 md:h-12 text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C10.343 2 9 3.343 9 5V11C9 12.657 10.343 14 12 14C13.657 14 15 12.657 15 11V5C15 3.343 13.657 2 12 2ZM12 16.25C10.428 16.25 9.143 15.653 8.172 14.682L7.465 15.389C8.615 16.539 10.211 17.25 12 17.25C13.789 17.25 15.385 16.539 16.535 15.389L15.828 14.682C14.857 15.653 13.572 16.25 12 16.25ZM19 11H17C17 13.761 14.761 16 12 16V18C15.867 18 19 14.867 19 11Z"/></svg></button>
                 <button id="clear-btn" class="absolute right-0 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 p-3 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg></button>
@@ -142,10 +141,7 @@
 
             let audioQueue = [];
             let isAudioPlaying = false;
-
-            let audioContext, analyser, sourceNode, dataArray;
-            let silenceDetectionInterval = null;
-
+            
             const LANGUAGES = {
                 'sk-SK': { name: 'Slovak', displayName: 'Slovenčina', statusText: 'Kliknite na mikrofón pre štart' },
                 'pl-PL': { name: 'Polish', displayName: 'Poľština', statusText: 'Kliknij mikrofon, aby rozpocząć' },
@@ -243,7 +239,6 @@
                 if (wasRecording) {
                     if (isMobile) {
                         if (mediaRecorder && mediaRecorder.state === 'recording') mediaRecorder.stop();
-                        stopSilenceDetection();
                     } else {
                         if (recognition) recognition.stop();
                     }
@@ -321,41 +316,6 @@
             };
 
             // --- Mobile-specific: MediaRecorder + Whisper ---
-            const startSilenceDetection = (stream) => {
-                audioContext = new (window.AudioContext || window.webkitAudioContext)();
-                analyser = audioContext.createAnalyser();
-                sourceNode = audioContext.createMediaStreamSource(stream);
-                sourceNode.connect(analyser);
-                analyser.fftSize = 256;
-                const bufferLength = analyser.frequencyBinCount;
-                dataArray = new Uint8Array(bufferLength);
-
-                let silenceStart = Date.now();
-
-                silenceDetectionInterval = setInterval(() => {
-                    analyser.getByteFrequencyData(dataArray);
-                    const sum = dataArray.reduce((a, b) => a + b, 0);
-                    const average = sum / bufferLength;
-
-                    if (average > 1) { // Znížená citlivosť
-                        silenceStart = Date.now();
-                        startInactivityTimer(); // Resetujeme časovač neaktivity
-                    }
-
-                    if (Date.now() - silenceStart > SILENCE_TIMEOUT) {
-                        if (mediaRecorder && mediaRecorder.state === 'recording') {
-                            mediaRecorder.stop();
-                        }
-                    }
-                }, 250);
-            };
-
-            const stopSilenceDetection = () => {
-                clearInterval(silenceDetectionInterval);
-                if (sourceNode) sourceNode.disconnect();
-                if (audioContext && audioContext.state !== 'closed') audioContext.close();
-            };
-
             const startMediaRecorder = async () => {
                 try {
                     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -367,17 +327,21 @@
                     };
 
                     mediaRecorder.onstop = async () => {
-                        stopSilenceDetection();
                         if (micState === 'idle') {
-                            stream.getTracks().forEach(track => track.stop());
+                            if (mediaRecorder && mediaRecorder.stream) {
+                                mediaRecorder.stream.getTracks().forEach(track => track.stop());
+                            }
                             return;
                         }
 
                         const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
                         
+                        if (settings.simultaneous && micState !== 'idle') {
+                            startRecording();
+                        }
+
                         if (audioBlob.size < 1000) {
-                            if (settings.simultaneous && micState !== 'idle') startRecording();
-                            else resetState();
+                            if (!settings.simultaneous) resetState();
                             return;
                         }
 
@@ -388,18 +352,24 @@
                         } catch (error) {
                             displayError(error.message);
                         } finally {
-                            if (settings.simultaneous && micState !== 'idle') {
-                                startRecording();
-                            } else {
+                            if (!settings.simultaneous) {
                                 resetState();
+                            } else if (micState === 'recording') {
+                                setMicStateUI('recording');
                             }
                         }
                     };
 
                     mediaRecorder.start();
+                    
                     if (settings.simultaneous) {
-                       startSilenceDetection(stream);
+                        silenceTimer = setTimeout(() => {
+                            if (mediaRecorder && mediaRecorder.state === 'recording') {
+                                mediaRecorder.stop();
+                            }
+                        }, 3000); 
                     }
+
                 } catch (err) {
                     displayError("Nepodarilo sa získať prístup k mikrofónu.");
                     resetState();
