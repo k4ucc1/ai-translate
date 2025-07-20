@@ -3,15 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Inteligentný Hlasový Prekladač v18</title>
+    <title>Inteligentný Hlasový Prekladač v19</title>
     
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script>
-        const settings_v18 = JSON.parse(localStorage.getItem('translatorSettings_v18')) || { theme: 'light' };
-        if (settings_v18.theme === 'dark') {
+        const settings_v19 = JSON.parse(localStorage.getItem('translatorSettings_v19')) || { theme: 'light' };
+        if (settings_v19.theme === 'dark') {
             document.documentElement.classList.add('dark');
         }
     </script>
@@ -93,7 +93,12 @@
     <script>
         document.addEventListener('DOMContentLoaded', () => {
             const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-            if (!SpeechRecognition) { alert("Váš prehliadač nepodporuje Web Speech API. Pre plnú funkčnosť použite prosím Google Chrome."); return; }
+            const isMobile = /Mobi|Android|iPhone/i.test(navigator.userAgent);
+
+            if (!SpeechRecognition && !isMobile) {
+                 alert("Váš prehliadač nepodporuje Web Speech API. Pre plnú funkčnosť použite prosím Google Chrome."); 
+                 return;
+            }
 
             // --- Elements ---
             const apiKeyInput = document.getElementById('api-key-input');
@@ -116,15 +121,16 @@
             const voiceSelect = document.getElementById('voice-select');
 
             // --- State & Config ---
-            let recognition = new SpeechRecognition();
+            let recognition; // Bude inicializované neskôr
+            let mediaRecorder;
+            let audioChunks = [];
             let isFirstSubtitle = true;
             let finalTranscript = '';
             let isTranslatingSegment = false;
             let micState = 'idle';
             let audioContextUnlocked = false;
-
             let speechPauseTimer = null; 
-            const SPEECH_PAUSE_TIMEOUT = 900; // 0.9 sekundy ticha spustí preklad
+            const SPEECH_PAUSE_TIMEOUT = 900;
 
             const LANGUAGES = {
                 'sk-SK': { name: 'Slovak', displayName: 'Slovenčina', statusText: 'Kliknite na mikrofón pre štart' },
@@ -145,10 +151,10 @@
             };
 
             // --- Settings & Persistence ---
-            const saveSettings = () => localStorage.setItem('translatorSettings_v18', JSON.stringify(settings));
+            const saveSettings = () => localStorage.setItem('translatorSettings_v19', JSON.stringify(settings));
             
             const loadSettings = () => {
-                const loaded = JSON.parse(localStorage.getItem('translatorSettings_v18'));
+                const loaded = JSON.parse(localStorage.getItem('translatorSettings_v19'));
                 if (loaded) {
                     settings = { ...settings, ...loaded };
                 }
@@ -212,21 +218,23 @@
 
                 if (state === 'idle') { micBtn.style.backgroundColor = 'var(--mic-ready-bg)'; status.textContent = LANGUAGES[settings.sourceLang].statusText; }
                 else if (state === 'recording') { micBtn.classList.add('active-state'); micBtn.style.backgroundColor = 'var(--mic-recording-bg)'; micBtn.style.setProperty('--mic-shadow-1', 'rgba(239, 68, 68, 0.4)'); micBtn.style.setProperty('--mic-shadow-2', 'rgba(239, 68, 68, 0.2)'); status.textContent = 'Počúvam...'; }
-                else if (state === 'processing') { micBtn.classList.add('active-state'); micBtn.style.backgroundColor = 'var(--mic-processing-bg)'; micBtn.style.setProperty('--mic-shadow-1', 'rgba(59, 130, 246, 0.4)'); micBtn.style.setProperty('--mic-shadow-2', 'rgba(59, 130, 246, 0.2)'); }
+                else if (state === 'processing') { micBtn.classList.add('active-state'); micBtn.style.backgroundColor = 'var(--mic-processing-bg)'; micBtn.style.setProperty('--mic-shadow-1', 'rgba(59, 130, 246, 0.4)'); micBtn.style.setProperty('--mic-shadow-2', 'rgba(59, 130, 246, 0.2)'); status.textContent = 'Spracovávam...'; }
             };
             const updateUIForLanguage = () => { setMicStateUI('idle'); };
 
-            const resetState = (hardReset = false) => {
+            const resetState = () => {
                 if (micState !== 'idle') {
-                    recognition.stop();
+                    if (isMobile) {
+                        if (mediaRecorder && mediaRecorder.state === 'recording') mediaRecorder.stop();
+                    } else {
+                        recognition.stop();
+                    }
                 }
                 clearTimeout(speechPauseTimer);
                 micState = 'idle';
                 isTranslatingSegment = false;
                 finalTranscript = '';
-                if (hardReset) {
-                    setMicStateUI('idle');
-                }
+                setMicStateUI('idle');
             };
 
             // --- Audio Context Unlock ---
@@ -235,83 +243,22 @@
                 const sound = new Audio("data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA");
                 sound.play().then(() => {
                     audioContextUnlocked = true;
-                    console.log("Audio context unlocked.");
                 }).catch(e => {});
             };
 
-            // --- Speech Recognition ---
-            recognition.continuous = true;
-            recognition.interimResults = true;
-
-            recognition.onresult = (event) => {
-                clearTimeout(speechPauseTimer);
-
-                let interimTranscript = '';
-                for (let i = event.resultIndex; i < event.results.length; ++i) {
-                    const transcriptPart = event.results[i][0].transcript;
-                    if (event.results[i].isFinal) {
-                        finalTranscript += transcriptPart;
-                    } else {
-                        interimTranscript += transcriptPart;
-                    }
-                }
-                status.textContent = interimTranscript || 'Počúvam...';
-
-                if (settings.simultaneous) {
-                    speechPauseTimer = setTimeout(() => {
-                        processAndRestart();
-                    }, SPEECH_PAUSE_TIMEOUT);
-                }
-            };
-
-            recognition.onend = () => {
-                if (micState === 'processing') { // Len pre klasický režim
-                     processTranscript(finalTranscript);
-                }
-            };
-            
-            recognition.onerror = (e) => { 
-                if (e.error === 'aborted' || e.error === 'no-speech') {
-                    return;
-                }
-                console.error("Speech Recognition Error:", e.error); 
-                displayError(`Chyba rozpoznávania: ${e.error}`); 
-                resetState(true);
-            };
-
-            // NOVÁ FUNKCIA: Cyklus pre Profi Režim
-            const processAndRestart = () => {
-                if (!finalTranscript || isTranslatingSegment) {
-                    return;
-                }
-                const textToProcess = finalTranscript;
-                finalTranscript = '';
-                
-                micState = 'processing'; // Na chvíľu, kým sa reštartuje
-                recognition.stop(); // Zastavíme, aby sme mohli hneď spustiť novú
-                
-                processTranscript(textToProcess).then(() => {
-                    if (settings.simultaneous) { // Ak je stále zapnutý profi režim, hneď štartujeme
-                        startRecording();
-                    } else { // Ak bol medzitým vypnutý, resetujeme
-                        resetState(true);
-                    }
-                });
-            };
-
+            // --- Recording Logic ---
             const startRecording = () => {
                 if (micState === 'recording') return;
                 if (!settings.apiKey) { apiKeySection.classList.remove('hidden'); keyStatus.textContent = 'Najprv prosím nastavte a uložte svoj OpenAI API kľúč.'; keyStatus.classList.add('text-red-500'); return; }
                 
                 unlockAudio();
                 micState = 'recording';
-                finalTranscript = '';
-                recognition.lang = settings.sourceLang;
-                try {
-                    recognition.start();
-                    setMicStateUI('recording');
-                } catch (e) {
-                    resetState(true);
+                setMicStateUI('recording');
+
+                if (isMobile) {
+                    startMediaRecorder();
+                } else {
+                    startSpeechRecognition();
                 }
             };
 
@@ -319,14 +266,131 @@
                 if (micState !== 'recording') return;
                 
                 clearTimeout(speechPauseTimer);
-                if (settings.simultaneous) {
-                    resetState(true);
+                setMicStateUI('processing');
+
+                if (isMobile) {
+                    if (mediaRecorder && mediaRecorder.state === 'recording') {
+                        mediaRecorder.stop(); // onstop sa postará o zvyšok
+                    }
                 } else {
                     micState = 'processing';
                     recognition.stop();
                 }
             };
 
+            // --- Mobile-specific: MediaRecorder + Whisper ---
+            const startMediaRecorder = async () => {
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    mediaRecorder = new MediaRecorder(stream);
+                    audioChunks = [];
+
+                    mediaRecorder.ondataavailable = event => {
+                        audioChunks.push(event.data);
+                    };
+
+                    mediaRecorder.onstop = async () => {
+                        const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+                        const audioFile = new File([audioBlob], "recording.webm", { type: 'audio/webm' });
+                        
+                        // Ak sme nič nenahrali, nerobíme nič
+                        if (audioFile.size < 1000) {
+                            if (settings.simultaneous) startRecording();
+                            else resetState();
+                            return;
+                        }
+
+                        try {
+                            const text = await transcribeWithWhisper(audioFile);
+                            await processTranscript(text);
+                        } catch (error) {
+                            displayError(error.message);
+                        } finally {
+                            if (settings.simultaneous) startRecording();
+                            else resetState();
+                        }
+                    };
+
+                    mediaRecorder.start();
+                } catch (err) {
+                    displayError("Nepodarilo sa získať prístup k mikrofónu.");
+                    resetState();
+                }
+            };
+
+            const transcribeWithWhisper = async (audioFile) => {
+                const formData = new FormData();
+                formData.append('file', audioFile);
+                formData.append('model', 'whisper-1');
+
+                const response = await fetch("https://api.openai.com/v1/audio/transcriptions", {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${settings.apiKey}` },
+                    body: formData
+                });
+
+                if (!response.ok) {
+                    const err = await response.json();
+                    throw new Error(`Whisper API: ${err.error.message}`);
+                }
+                const data = await response.json();
+                return data.text;
+            };
+
+            // --- Desktop-specific: Web Speech API ---
+            const initializeSpeechRecognition = () => {
+                recognition = new SpeechRecognition();
+                recognition.continuous = true;
+                recognition.interimResults = true;
+
+                recognition.onresult = (event) => {
+                    clearTimeout(speechPauseTimer);
+
+                    let interimTranscript = '';
+                    finalTranscript = ''; // Resetujeme pri každom výsledku pre istotu
+                    for (let i = 0; i < event.results.length; ++i) {
+                        if (event.results[i].isFinal) {
+                            finalTranscript += event.results[i][0].transcript;
+                        } else {
+                            interimTranscript += event.results[i][0].transcript;
+                        }
+                    }
+                    status.textContent = interimTranscript || 'Počúvam...';
+
+                    if (settings.simultaneous) {
+                        speechPauseTimer = setTimeout(() => {
+                            if (finalTranscript) {
+                                processTranscript(finalTranscript);
+                                finalTranscript = '';
+                            }
+                        }, SPEECH_PAUSE_TIMEOUT);
+                    }
+                };
+
+                recognition.onend = () => {
+                    if (micState === 'processing') {
+                         processTranscript(finalTranscript);
+                    }
+                };
+                
+                recognition.onerror = (e) => { 
+                    if (e.error === 'aborted' || e.error === 'no-speech') return;
+                    displayError(`Chyba rozpoznávania: ${e.error}`); 
+                    resetState();
+                };
+            };
+
+            const startSpeechRecognition = () => {
+                finalTranscript = '';
+                recognition.lang = settings.sourceLang;
+                try {
+                    recognition.start();
+                } catch (e) {
+                    resetState();
+                }
+            };
+            
+            // --- Main Logic ---
             micBtn.addEventListener('click', () => {
                 if (micState === 'idle') {
                     startRecording();
@@ -338,28 +402,27 @@
             // --- API Chain ---
             const processTranscript = async (transcriptToProcess) => {
                 if (!transcriptToProcess.trim()) {
-                    if(!settings.simultaneous) resetState(true);
+                    if(!settings.simultaneous) resetState();
                     return;
                 }
                 
+                isTranslatingSegment = true;
                 if (!settings.simultaneous) { 
                     setMicStateUI('processing'); 
-                    status.textContent = 'Chápem & Prekladám...';
                 }
 
                 try {
                     const result = await translateWithGPT4o(transcriptToProcess, LANGUAGES[settings.sourceLang].name, LANGUAGES[settings.targetLang].name);
                     displaySubtitles(result.corrected_source, result.translated_text);
                     if (!settings.subtitlesOnly) {
-                        if (!settings.simultaneous) status.textContent = 'Generujem hlas...';
                         await speakWithTTS(result.translated_text, settings.voice);
                     }
                 } catch (error) { 
-                    console.error("Processing error:", error); 
                     displayError(error.message);
                 } finally {
+                    isTranslatingSegment = false;
                     if (!settings.simultaneous) {
-                        resetState(true);
+                        resetState();
                     }
                 }
             };
@@ -368,7 +431,7 @@
                 const response = await fetch("https://api.openai.com/v1/chat/completions", {
                     method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${settings.apiKey}` },
                     body: JSON.stringify({ model: "gpt-4o", response_format: { type: "json_object" }, messages: [
-                        { role: "system", content: "You are an expert translator. A user will provide a text transcribed from speech, which may contain errors or non-standard language. Your task is to provide a corrected and translated version. Provide your response as a JSON object with two keys: 'corrected_source' and 'translated_text'." },
+                        { role: "system", content: "You are an expert translator. A user will provide a text transcribed from speech. Provide a corrected and translated version. Respond as a JSON object with two keys: 'corrected_source' and 'translated_text'." },
                         { role: "user", content: `The following text is from ${from}. Correct it and translate the corrected version to ${to}. Text: "${text}"` }
                     ], temperature: 0.2 })
                 });
@@ -400,7 +463,7 @@
                 if (isFirstSubtitle) { subtitles.innerHTML = ''; isFirstSubtitle = false; }
                 const errorEntry = document.createElement('div'); errorEntry.className = 'mb-3 text-red-500 p-2 bg-red-500/10 rounded animate-fade-in';
                 errorEntry.innerHTML = `<p class="font-bold">Chyba</p><p>${message}</p>`;
-                subtitles.appendChild(errorEntry); subtitles.scrollTop = subtitles.scrollHeight;
+                subtitles.appendChild(entry); subtitles.scrollTop = subtitles.scrollHeight;
             };
 
             // --- Event Listeners & Initial Setup ---
@@ -426,15 +489,19 @@
             sourceLangSelect.addEventListener('change', handleLanguageChange);
             targetLangSelect.addEventListener('change', handleLanguageChange);
             swapLangBtn.addEventListener('click', () => { const oldSource = sourceLangSelect.value; sourceLangSelect.value = targetLangSelect.value; targetLangSelect.value = oldSource; handleLanguageChange(); });
-            simultaneousToggle.addEventListener('change', () => { settings.simultaneous = simultaneousToggle.checked; saveSettings(); resetState(true); });
+            simultaneousToggle.addEventListener('change', () => { settings.simultaneous = simultaneousToggle.checked; saveSettings(); resetState(); });
             subtitlesOnly.addEventListener('change', () => { settings.subtitlesOnly = subtitlesOnly.checked; saveSettings(); });
             voiceSelect.addEventListener('change', () => { settings.voice = voiceSelect.value; saveSettings(); });
             clearBtn.addEventListener('click', () => {
                 subtitles.innerHTML = '<p class="text-[var(--text-muted-color)] text-center text-lg">Tu sa zobrazí preklad...</p>';
                 isFirstSubtitle = true;
-                resetState(true);
+                resetState();
             });
 
+            // --- Initialization ---
+            if (!isMobile) {
+                initializeSpeechRecognition();
+            }
             loadSettings();
         });
     </script>
