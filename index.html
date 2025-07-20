@@ -3,15 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Inteligentný Hlasový Prekladač v17</title>
+    <title>Inteligentný Hlasový Prekladač v18</title>
     
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script>
-        const settings_v17 = JSON.parse(localStorage.getItem('translatorSettings_v17')) || { theme: 'light' };
-        if (settings_v17.theme === 'dark') {
+        const settings_v18 = JSON.parse(localStorage.getItem('translatorSettings_v18')) || { theme: 'light' };
+        if (settings_v18.theme === 'dark') {
             document.documentElement.classList.add('dark');
         }
     </script>
@@ -123,11 +123,8 @@
             let micState = 'idle';
             let audioContextUnlocked = false;
 
-            let watchdogInterval = null;
-            let lastResultTimestamp = 0;
             let speechPauseTimer = null; 
-            const SPEECH_PAUSE_TIMEOUT = 850; // Agresívny časovač pre rýchlu odozvu
-            const WATCHDOG_TIMEOUT = 5000; // Dlhší časovač, keďže už nereštartujeme tak často
+            const SPEECH_PAUSE_TIMEOUT = 900; // 0.9 sekundy ticha spustí preklad
 
             const LANGUAGES = {
                 'sk-SK': { name: 'Slovak', displayName: 'Slovenčina', statusText: 'Kliknite na mikrofón pre štart' },
@@ -148,10 +145,10 @@
             };
 
             // --- Settings & Persistence ---
-            const saveSettings = () => localStorage.setItem('translatorSettings_v17', JSON.stringify(settings));
+            const saveSettings = () => localStorage.setItem('translatorSettings_v18', JSON.stringify(settings));
             
             const loadSettings = () => {
-                const loaded = JSON.parse(localStorage.getItem('translatorSettings_v17'));
+                const loaded = JSON.parse(localStorage.getItem('translatorSettings_v18'));
                 if (loaded) {
                     settings = { ...settings, ...loaded };
                 }
@@ -219,16 +216,17 @@
             };
             const updateUIForLanguage = () => { setMicStateUI('idle'); };
 
-            const resetState = () => {
+            const resetState = (hardReset = false) => {
                 if (micState !== 'idle') {
                     recognition.stop();
                 }
-                clearInterval(watchdogInterval);
                 clearTimeout(speechPauseTimer);
                 micState = 'idle';
                 isTranslatingSegment = false;
                 finalTranscript = '';
-                setMicStateUI('idle');
+                if (hardReset) {
+                    setMicStateUI('idle');
+                }
             };
 
             // --- Audio Context Unlock ---
@@ -238,7 +236,7 @@
                 sound.play().then(() => {
                     audioContextUnlocked = true;
                     console.log("Audio context unlocked.");
-                }).catch(e => console.error("Audio unlock failed:", e));
+                }).catch(e => {});
             };
 
             // --- Speech Recognition ---
@@ -246,7 +244,6 @@
             recognition.interimResults = true;
 
             recognition.onresult = (event) => {
-                lastResultTimestamp = Date.now();
                 clearTimeout(speechPauseTimer);
 
                 let interimTranscript = '';
@@ -262,30 +259,14 @@
 
                 if (settings.simultaneous) {
                     speechPauseTimer = setTimeout(() => {
-                        if (finalTranscript && !isTranslatingSegment) {
-                            processTranscript(finalTranscript);
-                            finalTranscript = '';
-                        }
+                        processAndRestart();
                     }, SPEECH_PAUSE_TIMEOUT);
                 }
             };
 
             recognition.onend = () => {
-                // V Profi režime sa reštartuje len ak to spôsobí watchdog
-                if (micState === 'recording' && settings.simultaneous) {
-                    console.log("Recognition ended unexpectedly, restarting...");
-                    try {
-                        recognition.start();
-                    } catch(e) {
-                        resetState();
-                    }
-                    return;
-                }
-                // V klasickom režime spracujeme výsledok
-                if (micState === 'processing' && finalTranscript) {
+                if (micState === 'processing') { // Len pre klasický režim
                      processTranscript(finalTranscript);
-                } else if (micState === 'processing') {
-                    resetState();
                 }
             };
             
@@ -295,56 +276,61 @@
                 }
                 console.error("Speech Recognition Error:", e.error); 
                 displayError(`Chyba rozpoznávania: ${e.error}`); 
-                resetState();
+                resetState(true);
             };
 
-            const startWatchdog = () => {
-                lastResultTimestamp = Date.now();
-                watchdogInterval = setInterval(() => {
-                    if (micState !== 'recording') return;
-                    if (Date.now() - lastResultTimestamp > WATCHDOG_TIMEOUT) {
-                        recognition.stop();
+            // NOVÁ FUNKCIA: Cyklus pre Profi Režim
+            const processAndRestart = () => {
+                if (!finalTranscript || isTranslatingSegment) {
+                    return;
+                }
+                const textToProcess = finalTranscript;
+                finalTranscript = '';
+                
+                micState = 'processing'; // Na chvíľu, kým sa reštartuje
+                recognition.stop(); // Zastavíme, aby sme mohli hneď spustiť novú
+                
+                processTranscript(textToProcess).then(() => {
+                    if (settings.simultaneous) { // Ak je stále zapnutý profi režim, hneď štartujeme
+                        startRecording();
+                    } else { // Ak bol medzitým vypnutý, resetujeme
+                        resetState(true);
                     }
-                }, 2000);
+                });
             };
 
             const startRecording = () => {
-                if (micState !== 'idle') return;
+                if (micState === 'recording') return;
                 if (!settings.apiKey) { apiKeySection.classList.remove('hidden'); keyStatus.textContent = 'Najprv prosím nastavte a uložte svoj OpenAI API kľúč.'; keyStatus.classList.add('text-red-500'); return; }
                 
-                unlockAudio(); // Pokus o odomknutie audia pri prvom štarte
+                unlockAudio();
                 micState = 'recording';
                 finalTranscript = '';
                 recognition.lang = settings.sourceLang;
                 try {
                     recognition.start();
                     setMicStateUI('recording');
-                    if (settings.simultaneous) {
-                        startWatchdog();
-                    }
                 } catch (e) {
-                    resetState();
+                    resetState(true);
                 }
             };
 
             const stopRecording = () => {
                 if (micState !== 'recording') return;
                 
-                if (settings.simultaneous) {
-                    resetState();
-                    return;
-                }
-                
-                micState = 'processing';
-                clearInterval(watchdogInterval);
                 clearTimeout(speechPauseTimer);
-                recognition.stop();
+                if (settings.simultaneous) {
+                    resetState(true);
+                } else {
+                    micState = 'processing';
+                    recognition.stop();
+                }
             };
 
             micBtn.addEventListener('click', () => {
                 if (micState === 'idle') {
                     startRecording();
-                } else if (micState === 'recording') {
+                } else {
                     stopRecording();
                 }
             });
@@ -352,13 +338,11 @@
             // --- API Chain ---
             const processTranscript = async (transcriptToProcess) => {
                 if (!transcriptToProcess.trim()) {
-                    if(!settings.simultaneous) resetState();
+                    if(!settings.simultaneous) resetState(true);
                     return;
                 }
                 
-                if (settings.simultaneous) { 
-                    isTranslatingSegment = true; 
-                } else { 
+                if (!settings.simultaneous) { 
                     setMicStateUI('processing'); 
                     status.textContent = 'Chápem & Prekladám...';
                 }
@@ -374,10 +358,8 @@
                     console.error("Processing error:", error); 
                     displayError(error.message);
                 } finally {
-                    if (settings.simultaneous) { 
-                        isTranslatingSegment = false; 
-                    } else {
-                        resetState();
+                    if (!settings.simultaneous) {
+                        resetState(true);
                     }
                 }
             };
@@ -386,7 +368,7 @@
                 const response = await fetch("https://api.openai.com/v1/chat/completions", {
                     method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${settings.apiKey}` },
                     body: JSON.stringify({ model: "gpt-4o", response_format: { type: "json_object" }, messages: [
-                        { role: "system", content: "You are an expert translator. A user will provide a text transcribed from speech, which may contain errors or non-standard language. Your task is twofold: First, correct and normalize this text into standard, grammatically correct language. Second, translate this *corrected* text. Provide your response as a JSON object with two keys: 'corrected_source' and 'translated_text'." },
+                        { role: "system", content: "You are an expert translator. A user will provide a text transcribed from speech, which may contain errors or non-standard language. Your task is to provide a corrected and translated version. Provide your response as a JSON object with two keys: 'corrected_source' and 'translated_text'." },
                         { role: "user", content: `The following text is from ${from}. Correct it and translate the corrected version to ${to}. Text: "${text}"` }
                     ], temperature: 0.2 })
                 });
@@ -444,13 +426,13 @@
             sourceLangSelect.addEventListener('change', handleLanguageChange);
             targetLangSelect.addEventListener('change', handleLanguageChange);
             swapLangBtn.addEventListener('click', () => { const oldSource = sourceLangSelect.value; sourceLangSelect.value = targetLangSelect.value; targetLangSelect.value = oldSource; handleLanguageChange(); });
-            simultaneousToggle.addEventListener('change', () => { settings.simultaneous = simultaneousToggle.checked; saveSettings(); resetState(); });
+            simultaneousToggle.addEventListener('change', () => { settings.simultaneous = simultaneousToggle.checked; saveSettings(); resetState(true); });
             subtitlesOnly.addEventListener('change', () => { settings.subtitlesOnly = subtitlesOnly.checked; saveSettings(); });
             voiceSelect.addEventListener('change', () => { settings.voice = voiceSelect.value; saveSettings(); });
             clearBtn.addEventListener('click', () => {
                 subtitles.innerHTML = '<p class="text-[var(--text-muted-color)] text-center text-lg">Tu sa zobrazí preklad...</p>';
                 isFirstSubtitle = true;
-                resetState();
+                resetState(true);
             });
 
             loadSettings();
