@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Inteligentný Hlasový Prekladač v25</title>
+    <title>Inteligentný Hlasový Prekladač v27</title>
     
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.7.77/Tone.js"></script>
@@ -11,8 +11,8 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script>
-        const settings_v25 = JSON.parse(localStorage.getItem('translatorSettings_v25')) || { theme: 'light' };
-        if (settings_v25.theme === 'dark') {
+        const settings_v27 = JSON.parse(localStorage.getItem('translatorSettings_v27')) || { theme: 'light' };
+        if (settings_v27.theme === 'dark') {
             document.documentElement.classList.add('dark');
         }
     </script>
@@ -136,12 +136,12 @@
             
             let silenceTimer = null;
             let inactivityTimer = null;
-            const SILENCE_TIMEOUT = 1000;
+            const SILENCE_TIMEOUT = 1200;
             const INACTIVITY_TIMEOUT = 20000;
 
             let audioQueue = [];
             let isAudioPlaying = false;
-            
+
             const LANGUAGES = {
                 'sk-SK': { name: 'Slovak', displayName: 'Slovenčina', statusText: 'Kliknite na mikrofón pre štart' },
                 'pl-PL': { name: 'Polish', displayName: 'Poľština', statusText: 'Kliknij mikrofon, aby rozpocząć' },
@@ -161,10 +161,10 @@
             };
 
             // --- Settings & Persistence ---
-            const saveSettings = () => localStorage.setItem('translatorSettings_v25', JSON.stringify(settings));
+            const saveSettings = () => localStorage.setItem('translatorSettings_v26', JSON.stringify(settings));
             
             const loadSettings = () => {
-                const loaded = JSON.parse(localStorage.getItem('translatorSettings_v25'));
+                const loaded = JSON.parse(localStorage.getItem('translatorSettings_v26'));
                 if (loaded) {
                     settings = { ...settings, ...loaded };
                 }
@@ -336,7 +336,7 @@
 
                         const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
                         
-                        if (settings.simultaneous && micState !== 'idle') {
+                        if (settings.simultaneous && micState === 'recording') {
                             startRecording();
                         }
 
@@ -344,8 +344,7 @@
                             if (!settings.simultaneous) resetState();
                             return;
                         }
-
-                        setMicStateUI('processing');
+                        
                         try {
                             const text = await transcribeWithWhisper(audioBlob);
                             await processTranscript(text);
@@ -354,8 +353,6 @@
                         } finally {
                             if (!settings.simultaneous) {
                                 resetState();
-                            } else if (micState === 'recording') {
-                                setMicStateUI('recording');
                             }
                         }
                     };
@@ -493,7 +490,7 @@
             const translateWithGPT4o = async (text, from, to) => {
                 const response = await fetch("https://api.openai.com/v1/chat/completions", {
                     method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${settings.apiKey}` },
-                    body: JSON.stringify({ model: "gpt-4o", response_format: { type: "json_object" }, messages: [
+                    body: JSON.stringify({ model: "gpt-4o-mini", response_format: { type: "json_object" }, messages: [
                         { role: "system", content: "You are an expert translator. A user will provide a text transcribed from speech. Provide a corrected and translated version. Respond as a JSON object with two keys: 'corrected_source' and 'translated_text'." },
                         { role: "user", content: `The following text is from ${from}. Correct it and translate the corrected version to ${to}. Text: "${text}"` }
                     ], temperature: 0.2 })
