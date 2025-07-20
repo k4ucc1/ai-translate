@@ -3,15 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Inteligentný Hlasový Prekladač v19</title>
+    <title>Inteligentný Hlasový Prekladač v23</title>
     
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script>
-        const settings_v19 = JSON.parse(localStorage.getItem('translatorSettings_v19')) || { theme: 'light' };
-        if (settings_v19.theme === 'dark') {
+        const settings_v23 = JSON.parse(localStorage.getItem('translatorSettings_v23')) || { theme: 'light' };
+        if (settings_v23.theme === 'dark') {
             document.documentElement.classList.add('dark');
         }
     </script>
@@ -28,7 +28,10 @@
             --panel-bg-color: #1f2937; --subtitles-bg-color: #111827; --border-color: #374151;
             --checkbox-text-color: #d1d5db;
         }
-        html, body { height: 100%; overflow: hidden; }
+        html, body { 
+            height: 100%; 
+            width: 100%;
+        }
         body {
             font-family: 'Inter', sans-serif; display: flex; align-items: center; justify-content: center;
             background-color: var(--bg-color); color: var(--text-color); transition: background-color 0.3s, color 0.3s;
@@ -53,9 +56,9 @@
         }
     </style>
 </head>
-<body class="p-2 sm:p-4">
+<body class="p-2 sm:p-4 md:p-6">
 
-    <div class="w-full h-full max-w-7xl bg-[var(--panel-bg-color)] rounded-2xl shadow-2xl p-4 sm:p-6 md:p-8 flex flex-col transition-colors duration-300">
+    <div class="w-full h-full bg-[var(--panel-bg-color)] rounded-2xl shadow-2xl p-4 sm:p-6 flex flex-col transition-colors duration-300">
         <!-- Control Icons -->
         <div class="absolute top-4 right-4 flex items-center gap-3 z-20">
             <button id="theme-btn" class="text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors"><svg id="theme-icon-light" class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"></path></svg><svg id="theme-icon-dark" class="w-6 h-6 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path></svg></button>
@@ -65,9 +68,9 @@
         <div id="api-key-section" class="hidden mb-4 px-4 py-3 bg-gray-200 dark:bg-gray-700/50 rounded-lg animate-fade-in z-10"><label for="api-key-input" class="block mb-2 text-sm font-medium text-gray-700 dark:text-gray-300">Váš OpenAI API Kľúč</label><div class="flex items-center gap-4"><input type="password" id="api-key-input" class="bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-sm rounded-lg focus:ring-indigo-500 focus:border-indigo-500 block w-full p-2.5" placeholder="sk-..."><button id="save-key-btn" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg whitespace-nowrap">Uložiť kľúč</button></div><p id="key-status" class="text-xs text-gray-500 dark:text-gray-400 mt-2"></p></div>
 
         <header id="main-header" class="flex items-center justify-center gap-2 sm:gap-4 mb-4 transition-all duration-300">
-            <select id="source-lang-select" class="custom-select text-xl sm:text-2xl md:text-4xl font-bold bg-transparent border-none focus:ring-0 text-right"></select>
+            <select id="source-lang-select" class="custom-select text-lg sm:text-xl md:text-3xl font-bold bg-transparent border-none focus:ring-0 text-right"></select>
             <button id="swap-lang-btn" class="text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-200 dark:hover:bg-gray-700 p-2 rounded-full transition-all duration-300 flex-shrink-0"><svg class="w-6 h-6 md:w-8 md:h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"></path></svg></button>
-            <select id="target-lang-select" class="custom-select text-xl sm:text-2xl md:text-4xl font-bold bg-transparent border-none focus:ring-0 text-gray-400 dark:text-gray-500 text-left"></select>
+            <select id="target-lang-select" class="custom-select text-lg sm:text-xl md:text-3xl font-bold bg-transparent border-none focus:ring-0 text-gray-400 dark:text-gray-500 text-left"></select>
         </header>
 
         <main class="flex-grow flex flex-col min-h-0">
@@ -75,7 +78,7 @@
             
             <div class="flex items-center justify-center flex-wrap gap-x-6 gap-y-2 mb-4">
                 <div class="flex items-center"><input type="checkbox" id="subtitles-only" class="w-4 h-4 text-indigo-600 bg-gray-300 dark:bg-gray-700 border-gray-400 dark:border-gray-600 rounded focus:ring-indigo-500"><label for="subtitles-only" class="ml-2 text-sm font-medium checkbox-label">Len titulky</label></div>
-                <div class="flex items-center"><input type="checkbox" id="simultaneous-toggle" class="w-4 h-4 text-indigo-600 bg-gray-300 dark:bg-gray-700 border-gray-400 dark:border-gray-600 rounded focus:ring-indigo-500"><label for="simultaneous-toggle" class="ml-2 text-sm font-medium checkbox-label">Profi Režim</label></div>
+                <div class="flex items-center"><input type="checkbox" id="simultaneous-toggle" class="w-4 h-4 text-indigo-600 bg-gray-300 dark:bg-gray-700 border-gray-400 dark:border-gray-600 rounded focus:ring-indigo-500"><label for="simultaneous-toggle" class="ml-2 text-sm font-medium checkbox-label">Online Režim</label></div>
                 <div id="voice-selection-container" class="flex items-center">
                     <label for="voice-select" class="mr-2 text-sm font-medium voice-label">Hlas:</label>
                     <select id="voice-select" class="text-sm rounded-md bg-gray-200 dark:bg-gray-600 border-transparent focus:border-indigo-500 focus:ring-indigo-500"></select>
@@ -121,7 +124,7 @@
             const voiceSelect = document.getElementById('voice-select');
 
             // --- State & Config ---
-            let recognition; // Bude inicializované neskôr
+            let recognition;
             let mediaRecorder;
             let audioChunks = [];
             let isFirstSubtitle = true;
@@ -131,6 +134,10 @@
             let audioContextUnlocked = false;
             let speechPauseTimer = null; 
             const SPEECH_PAUSE_TIMEOUT = 900;
+
+            // NOVINKA: Audio fronta
+            let audioQueue = [];
+            let isAudioPlaying = false;
 
             const LANGUAGES = {
                 'sk-SK': { name: 'Slovak', displayName: 'Slovenčina', statusText: 'Kliknite na mikrofón pre štart' },
@@ -151,10 +158,10 @@
             };
 
             // --- Settings & Persistence ---
-            const saveSettings = () => localStorage.setItem('translatorSettings_v19', JSON.stringify(settings));
+            const saveSettings = () => localStorage.setItem('translatorSettings_v23', JSON.stringify(settings));
             
             const loadSettings = () => {
-                const loaded = JSON.parse(localStorage.getItem('translatorSettings_v19'));
+                const loaded = JSON.parse(localStorage.getItem('translatorSettings_v23'));
                 if (loaded) {
                     settings = { ...settings, ...loaded };
                 }
@@ -223,15 +230,18 @@
             const updateUIForLanguage = () => { setMicStateUI('idle'); };
 
             const resetState = () => {
-                if (micState !== 'idle') {
+                const wasRecording = micState === 'recording';
+                micState = 'idle'; 
+                
+                if (wasRecording) {
                     if (isMobile) {
                         if (mediaRecorder && mediaRecorder.state === 'recording') mediaRecorder.stop();
                     } else {
-                        recognition.stop();
+                        if (recognition) recognition.stop();
                     }
                 }
+                
                 clearTimeout(speechPauseTimer);
-                micState = 'idle';
                 isTranslatingSegment = false;
                 finalTranscript = '';
                 setMicStateUI('idle');
@@ -266,11 +276,16 @@
                 if (micState !== 'recording') return;
                 
                 clearTimeout(speechPauseTimer);
-                setMicStateUI('processing');
+                
+                if (settings.simultaneous) {
+                    resetState();
+                    return;
+                }
 
+                setMicStateUI('processing');
                 if (isMobile) {
                     if (mediaRecorder && mediaRecorder.state === 'recording') {
-                        mediaRecorder.stop(); // onstop sa postará o zvyšok
+                        mediaRecorder.stop();
                     }
                 } else {
                     micState = 'processing';
@@ -290,28 +305,47 @@
                     };
 
                     mediaRecorder.onstop = async () => {
+                        if (micState === 'idle') {
+                            if (mediaRecorder && mediaRecorder.stream) {
+                                mediaRecorder.stream.getTracks().forEach(track => track.stop());
+                            }
+                            return;
+                        }
+
                         const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
                         const audioFile = new File([audioBlob], "recording.webm", { type: 'audio/webm' });
                         
-                        // Ak sme nič nenahrali, nerobíme nič
                         if (audioFile.size < 1000) {
-                            if (settings.simultaneous) startRecording();
+                            if (settings.simultaneous && micState !== 'idle') startRecording();
                             else resetState();
                             return;
                         }
 
+                        setMicStateUI('processing');
                         try {
                             const text = await transcribeWithWhisper(audioFile);
                             await processTranscript(text);
                         } catch (error) {
                             displayError(error.message);
                         } finally {
-                            if (settings.simultaneous) startRecording();
-                            else resetState();
+                            if (settings.simultaneous && micState !== 'idle') {
+                                startRecording();
+                            } else {
+                                resetState();
+                            }
                         }
                     };
 
                     mediaRecorder.start();
+                    
+                    if (settings.simultaneous) {
+                        speechPauseTimer = setTimeout(() => {
+                            if (mediaRecorder.state === 'recording') {
+                                mediaRecorder.stop();
+                            }
+                        }, 3000); 
+                    }
+
                 } catch (err) {
                     displayError("Nepodarilo sa získať prístup k mikrofónu.");
                     resetState();
@@ -347,20 +381,24 @@
                     clearTimeout(speechPauseTimer);
 
                     let interimTranscript = '';
-                    finalTranscript = ''; // Resetujeme pri každom výsledku pre istotu
-                    for (let i = 0; i < event.results.length; ++i) {
+                    let newFinalTranscript = '';
+                    for (let i = event.resultIndex; i < event.results.length; ++i) {
+                        const transcriptPart = event.results[i][0].transcript;
                         if (event.results[i].isFinal) {
-                            finalTranscript += event.results[i][0].transcript;
+                            newFinalTranscript += transcriptPart + ' ';
                         } else {
-                            interimTranscript += event.results[i][0].transcript;
+                            interimTranscript += transcriptPart;
                         }
                     }
+                    
+                    finalTranscript += newFinalTranscript;
                     status.textContent = interimTranscript || 'Počúvam...';
 
                     if (settings.simultaneous) {
                         speechPauseTimer = setTimeout(() => {
-                            if (finalTranscript) {
-                                processTranscript(finalTranscript);
+                            const textToProcess = finalTranscript.trim();
+                            if (textToProcess) {
+                                processTranscript(textToProcess);
                                 finalTranscript = '';
                             }
                         }, SPEECH_PAUSE_TIMEOUT);
@@ -439,24 +477,40 @@
                 const data = await response.json(); return JSON.parse(data.choices[0].message.content);
             };
 
+            // OPRAVA: Audio fronta a rýchlosť
+            const playNextInQueue = () => {
+                if (isAudioPlaying || audioQueue.length === 0) {
+                    return;
+                }
+                isAudioPlaying = true;
+                const audio = audioQueue.shift();
+                audio.play();
+                audio.onended = () => {
+                    isAudioPlaying = false;
+                    playNextInQueue();
+                };
+            };
+
             const speakWithTTS = async (text, voice) => {
                 const response = await fetch("https://api.openai.com/v1/audio/speech", {
                     method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${settings.apiKey}` },
-                    body: JSON.stringify({ model: "tts-1", input: text, voice: voice })
+                    body: JSON.stringify({ model: "tts-1", input: text, voice: voice, speed: 1.25 })
                 });
                 if (!response.ok) { const err = await response.json(); throw new Error(`TTS API: ${err.error.message}`); }
                 const audioBlob = await response.blob(); 
                 const audioUrl = URL.createObjectURL(audioBlob);
                 const audio = new Audio(audioUrl);
                 audio.addEventListener('ended', () => URL.revokeObjectURL(audioUrl));
-                await audio.play();
+                
+                audioQueue.push(audio);
+                playNextInQueue();
             };
 
             // --- UI Updates ---
             const displaySubtitles = (corrected, translated) => {
                 if (isFirstSubtitle) { subtitles.innerHTML = ''; isFirstSubtitle = false; }
                 const entry = document.createElement('div'); entry.className = 'mb-6 animate-fade-in';
-                entry.innerHTML = `<p class="text-lg md:text-2xl text-[var(--text-muted-color)]">${corrected}</p><p class="text-2xl md:text-4xl font-semibold">${translated}</p>`;
+                entry.innerHTML = `<p class="text-base md:text-xl text-[var(--text-muted-color)]">${corrected}</p><p class="text-xl md:text-3xl font-semibold">${translated}</p>`;
                 subtitles.appendChild(entry); subtitles.scrollTop = subtitles.scrollHeight;
             };
             const displayError = (message) => {
